@@ -18,6 +18,7 @@ from ..palettes import color_palette
 from ..distributions import kdeplot
 from ..categorical import pointplot
 from ..linearmodels import pairplot
+from ..utils import categorical_order
 
 rs = np.random.RandomState(0)
 
@@ -106,6 +107,14 @@ class TestFacetGrid(object):
 
         with nt.assert_raises(ValueError):
             g = ag.FacetGrid(self.df, row="b", col="d", col_wrap=4)
+
+        df = self.df.copy()
+        df.loc[df.d == "j"] = np.nan
+        g_missing = ag.FacetGrid(df, col="d")
+        nt.assert_equal(g_missing.axes.shape, (1, 9))
+
+        g_missing_wrap = ag.FacetGrid(df, col="d", col_wrap=4)
+        nt.assert_equal(g_missing_wrap.axes.shape, (9,))
 
         plt.close("all")
 
@@ -247,7 +256,7 @@ class TestFacetGrid(object):
 
         nt.assert_equal(g1._legend.get_title().get_text(), "b_bool")
 
-        b_levels = sorted(map(str, self.df.b_bool.unique()))
+        b_levels = list(map(str, categorical_order(self.df.b_bool)))
 
         lines = g1._legend.get_lines()
         nt.assert_equal(len(lines), len(b_levels))
@@ -462,6 +471,10 @@ class TestFacetGrid(object):
         nt.assert_equal(g.axes[0, 1].get_title(), "b = n")
         nt.assert_equal(g.axes[1, 0].get_title(), "")
 
+        # Test the row "titles"
+        nt.assert_equal(g.axes[0, 1].texts[0].get_text(), "a = a")
+        nt.assert_equal(g.axes[1, 1].texts[0].get_text(), "a = b")
+
         # Test a provided title
         g.set_titles(col_template="{col_var} == {col_name}")
         nt.assert_equal(g.axes[0, 0].get_title(), "b == m")
@@ -533,6 +546,7 @@ class TestFacetGrid(object):
         nt.assert_equal(g.row_names, list("abc"))
         nt.assert_equal(g.col_names, list("mn"))
         nt.assert_equal(g.hue_names, list("tuv"))
+        nt.assert_equal(g.axes.shape, (3, 2))
 
         g = ag.FacetGrid(self.df, row="a", col="b", hue="c",
                          row_order=list("bca"),
@@ -542,6 +556,18 @@ class TestFacetGrid(object):
         nt.assert_equal(g.row_names, list("bca"))
         nt.assert_equal(g.col_names, list("nm"))
         nt.assert_equal(g.hue_names, list("vtu"))
+        nt.assert_equal(g.axes.shape, (3, 2))
+
+        g = ag.FacetGrid(self.df, row="a", col="b", hue="c",
+                         row_order=list("bcda"),
+                         col_order=list("nom"),
+                         hue_order=list("qvtu"))
+
+        nt.assert_equal(g.row_names, list("bcda"))
+        nt.assert_equal(g.col_names, list("nom"))
+        nt.assert_equal(g.hue_names, list("qvtu"))
+        nt.assert_equal(g.axes.shape, (4, 3))
+
         plt.close("all")
 
     def test_palette(self):
@@ -890,6 +916,103 @@ class TestPairGrid(object):
 
         for line, marker in zip(g.axes[0, 0].lines, kws["marker"]):
             nt.assert_equal(line.get_marker(), marker)
+
+        g = ag.PairGrid(self.df, hue="a", hue_kws=kws,
+                        hue_order=list("dcab"))
+        g.map(plt.plot)
+
+        for line, marker in zip(g.axes[0, 0].lines, kws["marker"]):
+            nt.assert_equal(line.get_marker(), marker)
+
+        plt.close("all")
+
+    @skipif(old_matplotlib)
+    def test_hue_order(self):
+
+        order = list("dcab")
+        g = ag.PairGrid(self.df, hue="a", hue_order=order)
+        g.map(plt.plot)
+
+        for line, level in zip(g.axes[1, 0].lines, order):
+            x, y = line.get_xydata().T
+            npt.assert_array_equal(x, self.df.loc[self.df.a == level, "x"])
+            npt.assert_array_equal(y, self.df.loc[self.df.a == level, "y"])
+
+        plt.close("all")
+
+        g = ag.PairGrid(self.df, hue="a", hue_order=order)
+        g.map_diag(plt.plot)
+
+        for line, level in zip(g.axes[0, 0].lines, order):
+            x, y = line.get_xydata().T
+            npt.assert_array_equal(x, self.df.loc[self.df.a == level, "x"])
+            npt.assert_array_equal(y, self.df.loc[self.df.a == level, "x"])
+
+        plt.close("all")
+
+        g = ag.PairGrid(self.df, hue="a", hue_order=order)
+        g.map_lower(plt.plot)
+
+        for line, level in zip(g.axes[1, 0].lines, order):
+            x, y = line.get_xydata().T
+            npt.assert_array_equal(x, self.df.loc[self.df.a == level, "x"])
+            npt.assert_array_equal(y, self.df.loc[self.df.a == level, "y"])
+
+        plt.close("all")
+
+        g = ag.PairGrid(self.df, hue="a", hue_order=order)
+        g.map_upper(plt.plot)
+
+        for line, level in zip(g.axes[0, 1].lines, order):
+            x, y = line.get_xydata().T
+            npt.assert_array_equal(x, self.df.loc[self.df.a == level, "y"])
+            npt.assert_array_equal(y, self.df.loc[self.df.a == level, "x"])
+
+        plt.close("all")
+
+    @skipif(old_matplotlib)
+    def test_hue_order_missing_level(self):
+
+        order = list("dcaeb")
+        g = ag.PairGrid(self.df, hue="a", hue_order=order)
+        g.map(plt.plot)
+
+        for line, level in zip(g.axes[1, 0].lines, order):
+            x, y = line.get_xydata().T
+            npt.assert_array_equal(x, self.df.loc[self.df.a == level, "x"])
+            npt.assert_array_equal(y, self.df.loc[self.df.a == level, "y"])
+
+        plt.close("all")
+
+        g = ag.PairGrid(self.df, hue="a", hue_order=order)
+        g.map_diag(plt.plot)
+
+        for line, level in zip(g.axes[0, 0].lines, order):
+            x, y = line.get_xydata().T
+            npt.assert_array_equal(x, self.df.loc[self.df.a == level, "x"])
+            npt.assert_array_equal(y, self.df.loc[self.df.a == level, "x"])
+
+        plt.close("all")
+
+        g = ag.PairGrid(self.df, hue="a", hue_order=order)
+        g.map_lower(plt.plot)
+
+        for line, level in zip(g.axes[1, 0].lines, order):
+            x, y = line.get_xydata().T
+            npt.assert_array_equal(x, self.df.loc[self.df.a == level, "x"])
+            npt.assert_array_equal(y, self.df.loc[self.df.a == level, "y"])
+
+        plt.close("all")
+
+        g = ag.PairGrid(self.df, hue="a", hue_order=order)
+        g.map_upper(plt.plot)
+
+        for line, level in zip(g.axes[0, 1].lines, order):
+            x, y = line.get_xydata().T
+            npt.assert_array_equal(x, self.df.loc[self.df.a == level, "y"])
+            npt.assert_array_equal(y, self.df.loc[self.df.a == level, "x"])
+
+        plt.close("all")
 
     def test_nondefault_index(self):
 

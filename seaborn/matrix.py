@@ -3,6 +3,7 @@ import itertools
 
 import colorsys
 import matplotlib as mpl
+from matplotlib.collections import LineCollection
 import matplotlib.pyplot as plt
 from matplotlib import gridspec
 import numpy as np
@@ -107,25 +108,38 @@ class _HeatMapper(object):
         plot_data = np.ma.masked_where(np.asarray(mask), plot_data)
 
         # Get good names for the rows and columns
-        if isinstance(xticklabels, bool) and xticklabels:
-            self.xticklabels = _index_to_ticklabels(data.columns)
-        elif isinstance(xticklabels, bool) and not xticklabels:
-            self.xticklabels = ['' for _ in range(data.shape[1])]
+        xtickevery = 1
+        if isinstance(xticklabels, int) and xticklabels > 1:
+            xtickevery = xticklabels
+            xticklabels = _index_to_ticklabels(data.columns)
+        elif xticklabels is True:
+            xticklabels = _index_to_ticklabels(data.columns)
+        elif xticklabels is False:
+            xticklabels = []
+
+        ytickevery = 1
+        if isinstance(yticklabels, int) and yticklabels > 1:
+            ytickevery = yticklabels
+            yticklabels = _index_to_ticklabels(data.index)
+        elif yticklabels is True:
+            yticklabels = _index_to_ticklabels(data.index)
+        elif yticklabels is False:
+            yticklabels = []
         else:
-            self.xticklabels = xticklabels
+            yticklabels = yticklabels[::-1]
 
-        xlabel = _index_to_label(data.columns)
-
-        if isinstance(yticklabels, bool) and yticklabels:
-            self.yticklabels = _index_to_ticklabels(data.index)
-        elif isinstance(yticklabels, bool) and not yticklabels:
-            self.yticklabels = ['' for _ in range(data.shape[0])]
-        else:
-            self.yticklabels = yticklabels[::-1]
-
-        ylabel = _index_to_label(data.index)
+        # Get the positions and used label for the ticks
+        nx, ny = data.T.shape
+        xstart, xend, xstep = 0, nx, xtickevery
+        self.xticks = np.arange(xstart, xend, xstep) + .5
+        self.xticklabels = xticklabels[xstart:xend:xstep]
+        ystart, yend, ystep = (ny - 1) % ytickevery, ny, ytickevery
+        self.yticks = np.arange(ystart, yend, ystep) + .5
+        self.yticklabels = yticklabels[ystart:yend:ystep]
 
         # Get good names for the axis labels
+        xlabel = _index_to_label(data.columns)
+        ylabel = _index_to_label(data.index)
         self.xlabel = xlabel if xlabel is not None else ""
         self.ylabel = ylabel if ylabel is not None else ""
 
@@ -188,8 +202,9 @@ class _HeatMapper(object):
                 _, l, _ = colorsys.rgb_to_hls(*color[:3])
                 text_color = ".15" if l > .5 else "w"
                 val = ("{:" + self.fmt + "}").format(val)
-                ax.text(x, y, val, color=text_color,
-                        ha="center", va="center", **self.annot_kws)
+                text_kwargs = dict(color=text_color, ha="center", va="center")
+                text_kwargs.update(self.annot_kws)
+                ax.text(x, y, val, **text_kwargs)
 
     def plot(self, ax, cax, kws):
         """Draw the heatmap on the provided Axes."""
@@ -204,8 +219,7 @@ class _HeatMapper(object):
         ax.set(xlim=(0, self.data.shape[1]), ylim=(0, self.data.shape[0]))
 
         # Add row and column labels
-        nx, ny = self.data.T.shape
-        ax.set(xticks=np.arange(nx) + .5, yticks=np.arange(ny) + .5)
+        ax.set(xticks=self.xticks, yticks=self.yticks)
         xtl = ax.set_xticklabels(self.xticklabels)
         ytl = ax.set_yticklabels(self.yticklabels, rotation="vertical")
 
@@ -233,7 +247,7 @@ class _HeatMapper(object):
 
 def heatmap(data, vmin=None, vmax=None, cmap=None, center=None, robust=False,
             annot=False, fmt=".2g", annot_kws=None,
-            linewidths=.5, linecolor="white",
+            linewidths=0, linecolor="white",
             cbar=True, cbar_kws=None, cbar_ax=None,
             square=False, ax=None, xticklabels=True, yticklabels=True,
             mask=None,
@@ -276,9 +290,9 @@ def heatmap(data, vmin=None, vmax=None, cmap=None, center=None, robust=False,
     annot_kws : dict of key, value mappings, optional
         Keyword arguments for ``ax.text`` when ``annot`` is True.
     linewidths : float, optional
-        Width of the lines that divide each cell.
+        Width of the lines that will divide each cell.
     linecolor : color, optional
-        Color of the lines that divide each cell.
+        Color of the lines that will divide each cell.
     cbar : boolean, optional
         Whether to draw a colorbar.
     cbar_kws : dict of key, value mappings, optional
@@ -292,14 +306,16 @@ def heatmap(data, vmin=None, vmax=None, cmap=None, center=None, robust=False,
     ax : matplotlib Axes, optional
         Axes in which to draw the plot, otherwise use the currently-active
         Axes.
-    xticklabels : list-like or bool, optional
+    xticklabels : list-like, int, or bool, optional
         If True, plot the column names of the dataframe. If False, don't plot
         the column names. If list-like, plot these alternate labels as the
-        xticklabels
-    yticklabels : list-like or bool, optional
+        xticklabels. If an integer, use the column names but plot only every
+        n label.
+    yticklabels : list-like, int, or bool, optional
         If True, plot the row names of the dataframe. If False, don't plot
         the row names. If list-like, plot these alternate labels as the
-        yticklabels
+        yticklabels. If an integer, use the index names but plot only every
+        n label.
     mask : boolean array or DataFrame, optional
         If passed, data will not be shown in cells where ``mask`` is True.
         Cells with missing values are automatically masked.
@@ -310,6 +326,109 @@ def heatmap(data, vmin=None, vmax=None, cmap=None, center=None, robust=False,
     -------
     ax : matplotlib Axes
         Axes object with the heatmap.
+
+    Examples
+    --------
+
+    Plot a heatmap for a numpy array:
+
+    .. plot::
+        :context: close-figs
+
+        >>> import numpy as np; np.random.seed(0)
+        >>> import seaborn as sns; sns.set()
+        >>> uniform_data = np.random.rand(10, 12)
+        >>> ax = sns.heatmap(uniform_data)
+
+    Change the limits of the colormap:
+
+    .. plot::
+        :context: close-figs
+
+        >>> ax = sns.heatmap(uniform_data, vmin=0, vmax=1)
+
+    Plot a heatmap for data centered on 0:
+
+    .. plot::
+        :context: close-figs
+
+        >>> normal_data = np.random.randn(10, 12)
+        >>> ax = sns.heatmap(normal_data)
+
+    Plot a dataframe with meaningful row and column labels:
+
+    .. plot::
+        :context: close-figs
+
+        >>> flights = sns.load_dataset("flights")
+        >>> flights = flights.pivot("month", "year", "passengers")
+        >>> ax = sns.heatmap(flights)
+
+    Annotate each cell with the numeric value using integer formatting:
+
+    .. plot::
+        :context: close-figs
+
+        >>> ax = sns.heatmap(flights, annot=True, fmt="d")
+
+    Add lines between each cell:
+
+    .. plot::
+        :context: close-figs
+
+        >>> ax = sns.heatmap(flights, linewidths=.5)
+
+    Use a different colormap:
+
+    .. plot::
+        :context: close-figs
+
+        >>> ax = sns.heatmap(flights, cmap="YlGnBu")
+
+    Center the colormap at a specific value:
+
+    .. plot::
+        :context: close-figs
+
+        >>> ax = sns.heatmap(flights, center=flights.loc["January", 1955])
+
+    Plot every other column label and don't plot row labels:
+
+    .. plot::
+        :context: close-figs
+
+        >>> data = np.random.randn(50, 20)
+        >>> ax = sns.heatmap(data, xticklabels=2, yticklabels=False)
+
+    Don't draw a colorbar:
+
+    .. plot::
+        :context: close-figs
+
+        >>> ax = sns.heatmap(flights, cbar=False)
+
+    Use different axes for the colorbar:
+
+    .. plot::
+        :context: close-figs
+
+        >>> grid_kws = {"height_ratios": (.9, .05), "hspace": .3}
+        >>> f, (ax, cbar_ax) = plt.subplots(2, gridspec_kw=grid_kws)
+        >>> ax = sns.heatmap(flights, ax=ax,
+        ...                  cbar_ax=cbar_ax,
+        ...                  cbar_kws={"orientation": "horizontal"})
+
+    Use a mask to plot only part of a matrix
+
+    .. plot::
+        :context: close-figs
+
+        >>> corr = np.corrcoef(np.random.randn(10, 200))
+        >>> mask = np.zeros_like(corr)
+        >>> mask[np.triu_indices_from(mask)] = True
+        >>> with sns.axes_style("white"):
+        ...     ax = sns.heatmap(corr, mask=mask, vmax=.3, square=True)
+
 
     """
     # Initialize the plotter object
@@ -393,20 +512,15 @@ class _DendrogramPlotter(object):
             self.yticklabels, self.xticklabels = [], []
             self.xlabel, self.ylabel = '', ''
 
-        if self.rotate:
-            self.X = self.dendrogram['dcoord']
-            self.Y = self.dendrogram['icoord']
-        else:
-            self.X = self.dendrogram['icoord']
-            self.Y = self.dendrogram['dcoord']
+        self.dependent_coord = self.dendrogram['dcoord']
+        self.independent_coord = self.dendrogram['icoord']
 
     def _calculate_linkage_scipy(self):
         if np.product(self.shape) >= 10000:
             UserWarning('This will be slow... (gentle suggestion: '
                         '"pip install fastcluster")')
 
-        pairwise_dists = distance.squareform(
-            distance.pdist(self.array, metric=self.metric))
+        pairwise_dists = distance.pdist(self.array, metric=self.metric)
         linkage = hierarchy.linkage(pairwise_dists, method=self.method)
         del pairwise_dists
         return linkage
@@ -466,19 +580,37 @@ class _DendrogramPlotter(object):
             Axes object upon which the dendrogram is plotted
 
         """
-        for x, y in zip(self.X, self.Y):
-            ax.plot(x, y, color='k', linewidth=.5)
-
+        line_kwargs = dict(linewidths=.5, colors='k')
         if self.rotate and self.axis == 0:
-            ax.invert_xaxis()
+            lines = LineCollection([list(zip(x, y))
+                                    for x, y in zip(self.dependent_coord,
+                                                    self.independent_coord)],
+                                   **line_kwargs)
+        else:
+            lines = LineCollection([list(zip(x, y))
+                                    for x, y in zip(self.independent_coord,
+                                                    self.dependent_coord)],
+                                   **line_kwargs)
+
+        ax.add_collection(lines)
+        number_of_leaves = len(self.reordered_ind)
+        max_dependent_coord = max(map(max, self.dependent_coord))
+
+        if self.rotate:
             ax.yaxis.set_ticks_position('right')
 
-            ymax = min(map(min, self.Y)) + max(map(max, self.Y))
-            ax.set_ylim(0, ymax)
+            # Constants 10 and 1.05 come from
+            # `scipy.cluster.hierarchy._plot_dendrogram`
+            ax.set_ylim(0, number_of_leaves * 10)
+            ax.set_xlim(0, max_dependent_coord * 1.05)
+
+            ax.invert_xaxis()
             ax.invert_yaxis()
         else:
-            xmax = min(map(min, self.X)) + max(map(max, self.X))
-            ax.set_xlim(0, xmax)
+            # Constants 10 and 1.05 come from
+            # `scipy.cluster.hierarchy._plot_dendrogram`
+            ax.set_xlim(0, number_of_leaves * 10)
+            ax.set_ylim(0, max_dependent_coord * 1.05)
 
         despine(ax=ax, bottom=True, left=True)
 
@@ -647,7 +779,7 @@ class ClusterGrid(Grid):
         else:
             z_scored = data2d.T
 
-        z_scored = (z_scored - z_scored.mean()) / z_scored.var()
+        z_scored = (z_scored - z_scored.mean()) / z_scored.std()
 
         if axis == 1:
             return z_scored
@@ -835,8 +967,22 @@ class ClusterGrid(Grid):
     def plot_matrix(self, colorbar_kws, xind, yind, **kws):
         self.data2d = self.data2d.iloc[yind, xind]
         self.mask = self.mask.iloc[yind, xind]
+
+        # Try to reorganize specified tick labels, if provided
+        xtl = kws.pop("xticklabels", True)
+        try:
+            xtl = np.asarray(xtl)[xind]
+        except (TypeError, IndexError):
+            pass
+        ytl = kws.pop("yticklabels", True)
+        try:
+            ytl = np.asarray(ytl)[yind]
+        except (TypeError, IndexError):
+            pass
+
         heatmap(self.data2d, ax=self.ax_heatmap, cbar_ax=self.cax,
-                cbar_kws=colorbar_kws, mask=self.mask, **kws)
+                cbar_kws=colorbar_kws, mask=self.mask,
+                xticklabels=xtl, yticklabels=ytl, **kws)
         self.ax_heatmap.yaxis.set_ticks_position('right')
         self.ax_heatmap.yaxis.set_label_position('right')
 
@@ -918,7 +1064,7 @@ def clustermap(data, pivot_kws=None, method='average', metric='euclidean',
         A ClusterGrid instance.
 
     Notes
-    ----
+    -----
     The returned object has a ``savefig`` method that should be used if you
     want to save the figure object without clipping the dendrograms.
 
@@ -927,6 +1073,73 @@ def clustermap(data, pivot_kws=None, method='average', metric='euclidean',
 
     Column indices, use:
     ``clustergrid.dendrogram_col.reordered_ind``
+
+    Examples
+    --------
+
+    Plot a clustered heatmap:
+
+    .. plot::
+        :context: close-figs
+
+        >>> import seaborn as sns; sns.set()
+        >>> flights = sns.load_dataset("flights")
+        >>> flights = flights.pivot("month", "year", "passengers")
+        >>> g = sns.clustermap(flights)
+
+    Don't cluster one of the axes:
+
+    .. plot::
+        :context: close-figs
+
+        >>> g = sns.clustermap(flights, col_cluster=False)
+
+    Use a different colormap and add lines to separate the cells:
+
+    .. plot::
+        :context: close-figs
+
+        >>> cmap = sns.cubehelix_palette(as_cmap=True, rot=-.3, light=1)
+        >>> g = sns.clustermap(flights, cmap=cmap, linewidths=.5)
+
+    Use a different figure size:
+
+    .. plot::
+        :context: close-figs
+
+        >>> g = sns.clustermap(flights, cmap=cmap, figsize=(7, 5))
+
+    Standardize the data across the columns:
+
+    .. plot::
+        :context: close-figs
+
+        >>> g = sns.clustermap(flights, standard_scale=1)
+
+    Normalize the data across the rows:
+
+    .. plot::
+        :context: close-figs
+
+        >>> g = sns.clustermap(flights, z_score=0)
+
+    Use a different clustering method:
+
+    .. plot::
+        :context: close-figs
+
+        >>> g = sns.clustermap(flights, method="single", metric="cosine")
+
+    Add colored labels on one of the axes:
+
+    .. plot::
+        :context: close-figs
+
+        >>> season_colors = (sns.color_palette("BuPu", 3) +
+        ...                  sns.color_palette("RdPu", 3) +
+        ...                  sns.color_palette("YlGn", 3) +
+        ...                  sns.color_palette("OrRd", 3))
+        >>> g = sns.clustermap(flights, row_colors=season_colors)
 
     """
     plotter = ClusterGrid(data, pivot_kws=pivot_kws, figsize=figsize,

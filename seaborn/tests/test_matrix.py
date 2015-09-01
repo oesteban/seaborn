@@ -185,10 +185,8 @@ class TestHeatmap(object):
         kws['xticklabels'] = False
         kws['yticklabels'] = False
         p = mat._HeatMapper(self.df_norm, **kws)
-        nt.assert_equal(p.xticklabels, ['' for _ in range(
-            self.df_norm.shape[1])])
-        nt.assert_equal(p.yticklabels, ['' for _ in range(
-            self.df_norm.shape[0])])
+        nt.assert_equal(p.xticklabels, [])
+        nt.assert_equal(p.yticklabels, [])
 
     def test_custom_ticklabels(self):
         kws = self.default_kws.copy()
@@ -200,6 +198,22 @@ class TestHeatmap(object):
         nt.assert_equal(p.xticklabels, xticklabels)
         nt.assert_equal(p.yticklabels, yticklabels[::-1])
 
+    def test_custom_ticklabel_interval(self):
+
+        kws = self.default_kws.copy()
+        kws['xticklabels'] = 2
+        kws['yticklabels'] = 3
+        p = mat._HeatMapper(self.df_norm, **kws)
+
+        nx, ny = self.df_norm.T.shape
+        ystart = (ny - 1) % 3
+        npt.assert_array_equal(p.xticks, np.arange(0, nx, 2) + .5)
+        npt.assert_array_equal(p.yticks, np.arange(ystart, ny, 3) + .5)
+        npt.assert_array_equal(p.xticklabels,
+                               self.df_norm.columns[::2])
+        npt.assert_array_equal(p.yticklabels,
+                               self.df_norm.index[::-1][ystart:ny:3])
+
     def test_heatmap_annotation(self):
 
         ax = mat.heatmap(self.df_norm, annot=True, fmt=".1f",
@@ -207,6 +221,17 @@ class TestHeatmap(object):
         for val, text in zip(self.x_norm[::-1].flat, ax.texts):
             nt.assert_equal(text.get_text(), "{:.1f}".format(val))
             nt.assert_equal(text.get_fontsize(), 14)
+        plt.close("all")
+
+    def test_heatmap_annotation_overwrite_kws(self):
+
+        annot_kws = dict(color="0.3", va="bottom", ha="left")
+        ax = mat.heatmap(self.df_norm, annot=True, fmt=".1f",
+                         annot_kws=annot_kws)
+        for text in ax.texts:
+            nt.assert_equal(text.get_color(), "0.3")
+            nt.assert_equal(text.get_ha(), "left")
+            nt.assert_equal(text.get_va(), "bottom")
         plt.close("all")
 
     def test_heatmap_annotation_with_mask(self):
@@ -342,8 +367,7 @@ class TestDendrogram(object):
                                                     metric='euclidean',
                                                     method='single')
     except ImportError:
-        x_norm_distances = distance.squareform(
-            distance.pdist(x_norm.T, metric='euclidean'))
+        x_norm_distances = distance.pdist(x_norm.T, metric='euclidean')
         x_norm_linkage = hierarchy.linkage(x_norm_distances, method='single')
     x_norm_dendrogram = hierarchy.dendrogram(x_norm_linkage, no_plot=True,
                                              color_list=['k'],
@@ -452,8 +476,7 @@ class TestDendrogram(object):
             linkage = fastcluster.linkage_vector(self.x_norm, method='single',
                                                  metric='euclidean')
         except ImportError:
-            d = distance.squareform(distance.pdist(self.x_norm,
-                                                   metric='euclidean'))
+            d = distance.pdist(self.x_norm, metric='euclidean')
             linkage = hierarchy.linkage(d, method='single')
         dendrogram = hierarchy.dendrogram(linkage, no_plot=True,
                                           color_list=['k'],
@@ -483,9 +506,8 @@ class TestDendrogram(object):
         from scipy.spatial import distance
         from scipy.cluster import hierarchy
 
-        dists = distance.squareform(distance.pdist(self.x_norm.T,
-                                                   metric=self.default_kws[
-                                                       'metric']))
+        dists = distance.pdist(self.x_norm.T,
+                               metric=self.default_kws['metric'])
         linkage = hierarchy.linkage(dists, method=self.default_kws['method'])
 
         npt.assert_array_equal(scipy_linkage, linkage)
@@ -517,13 +539,16 @@ class TestDendrogram(object):
         d = mat.dendrogram(self.x_norm, **self.default_kws)
 
         ax = plt.gca()
-        d.xmin, d.xmax = ax.get_xlim()
-        xmax = min(map(min, d.X)) + max(map(max, d.X))
-        nt.assert_equal(d.xmin, 0)
-        nt.assert_equal(d.xmax, xmax)
+        xlim = ax.get_xlim()
+        # 10 comes from _plot_dendrogram in scipy.cluster.hierarchy
+        xmax = len(d.reordered_ind) * 10
 
-        nt.assert_equal(len(ax.get_lines()), len(d.X))
-        nt.assert_equal(len(ax.get_lines()), len(d.Y))
+        nt.assert_equal(xlim[0], 0)
+        nt.assert_equal(xlim[1], xmax)
+
+        nt.assert_equal(len(ax.collections[0].get_paths()),
+                        len(d.dependent_coord))
+
         plt.close('all')
 
     def test_dendrogram_rotate(self):
@@ -533,10 +558,15 @@ class TestDendrogram(object):
         d = mat.dendrogram(self.x_norm, **kws)
 
         ax = plt.gca()
-        d.ymin, d.ymax = ax.get_ylim()
-        ymax = min(map(min, d.Y)) + max(map(max, d.Y))
-        nt.assert_equal(d.ymin, 0)
-        nt.assert_equal(d.ymax, ymax)
+        ylim = ax.get_ylim()
+
+        # 10 comes from _plot_dendrogram in scipy.cluster.hierarchy
+        ymax = len(d.reordered_ind) * 10
+
+        # Since y axis is inverted, ylim is (80, 0)
+        # and therefore not (0, 80) as usual:
+        nt.assert_equal(ylim[1], 0)
+        nt.assert_equal(ylim[0], ymax)
         plt.close('all')
 
     def test_dendrogram_ticklabel_rotation(self):
@@ -583,8 +613,7 @@ class TestClustermap(object):
                                                     metric='euclidean',
                                                     method='single')
     except ImportError:
-        x_norm_distances = distance.squareform(
-            distance.pdist(x_norm.T, metric='euclidean'))
+        x_norm_distances = distance.pdist(x_norm.T, metric='euclidean')
         x_norm_linkage = hierarchy.linkage(x_norm_distances, method='single')
     x_norm_dendrogram = hierarchy.dendrogram(x_norm_linkage, no_plot=True,
                                              color_list=['k'],
@@ -685,7 +714,7 @@ class TestClustermap(object):
 
     def test_z_score(self):
         df = self.df_norm.copy()
-        df = (df - df.mean()) / df.var()
+        df = (df - df.mean()) / df.std()
         kws = self.default_kws.copy()
         kws['z_score'] = 1
 
@@ -697,7 +726,7 @@ class TestClustermap(object):
     def test_z_score_axis0(self):
         df = self.df_norm.copy()
         df = df.T
-        df = (df - df.mean()) / df.var()
+        df = (df - df.mean()) / df.std()
         df = df.T
         kws = self.default_kws.copy()
         kws['z_score'] = 0
@@ -803,10 +832,10 @@ class TestClustermap(object):
     def test_plot_dendrograms(self):
         cm = mat.clustermap(self.df_norm, **self.default_kws)
 
-        nt.assert_equal(len(cm.ax_row_dendrogram.get_lines()),
-                        len(cm.dendrogram_row.X))
-        nt.assert_equal(len(cm.ax_col_dendrogram.get_lines()),
-                        len(cm.dendrogram_col.X))
+        nt.assert_equal(len(cm.ax_row_dendrogram.collections[0].get_paths()),
+                        len(cm.dendrogram_row.independent_coord))
+        nt.assert_equal(len(cm.ax_col_dendrogram.collections[0].get_paths()),
+                        len(cm.dendrogram_col.independent_coord))
         data2d = self.df_norm.iloc[cm.dendrogram_row.reordered_ind,
                                    cm.dendrogram_col.reordered_ind]
         pdt.assert_frame_equal(cm.data2d, data2d)
@@ -877,5 +906,26 @@ class TestClustermap(object):
         npt.assert_array_equal(g.mask.columns,
                                self.df_norm.columns[
                                    g.dendrogram_col.reordered_ind])
+
+        plt.close("all")
+
+    def test_ticklabel_reorganization(self):
+
+        kws = self.default_kws.copy()
+        xtl = np.arange(self.df_norm.shape[1])
+        kws["xticklabels"] = list(xtl)
+        ytl = self.letters.ix[:self.df_norm.shape[0]]
+        kws["yticklabels"] = ytl
+
+        g = mat.clustermap(self.df_norm, **kws)
+
+        xtl_actual = [t.get_text() for t in g.ax_heatmap.get_xticklabels()]
+        ytl_actual = [t.get_text() for t in g.ax_heatmap.get_yticklabels()]
+
+        xtl_want = xtl[g.dendrogram_col.reordered_ind].astype("<U1")
+        ytl_want = ytl[g.dendrogram_row.reordered_ind].astype("<U1")[::-1]
+
+        npt.assert_array_equal(xtl_actual, xtl_want)
+        npt.assert_array_equal(ytl_actual, ytl_want)
 
         plt.close("all")

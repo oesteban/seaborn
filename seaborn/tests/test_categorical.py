@@ -391,7 +391,7 @@ class TestCategoricalPlotter(CategoricalFixture):
         # Test a color-based blend for the hue mapping
         p.establish_variables("g", "y", "h", data=self.df)
         p.establish_colors("#ff0022", None, 1)
-        rgba_array = palettes.light_palette("#ff0022", 2)
+        rgba_array = np.array(palettes.light_palette("#ff0022", 2))
         npt.assert_array_almost_equal(p.colors,
                                       rgba_array[:, :3])
 
@@ -513,7 +513,7 @@ class TestCategoricalStatPlotter(CategoricalFixture):
         sem = stats.sem(y[g == "b"])
         half_ci = stats.norm.ppf(.975) * sem
         ci = mean - half_ci, mean + half_ci
-        npt.assert_equal(p.statistic[1], mean)
+        npt.assert_almost_equal(p.statistic[1], mean)
         npt.assert_array_almost_equal(p.confint[1], ci, 2)
 
         npt.assert_equal(p.statistic[2], np.nan)
@@ -588,7 +588,7 @@ class TestCategoricalStatPlotter(CategoricalFixture):
         sem = stats.sem(y[(g == "b") & (h == "x")])
         half_ci = stats.norm.ppf(.975) * sem
         ci = mean - half_ci, mean + half_ci
-        npt.assert_equal(p.statistic[1, 2], mean)
+        npt.assert_almost_equal(p.statistic[1, 2], mean)
         npt.assert_array_almost_equal(p.confint[1, 2], ci, 2)
 
         npt.assert_array_equal(p.statistic[:, 0], [np.nan] * 4)
@@ -725,6 +725,24 @@ class TestBoxPlotter(CategoricalFixture):
         ax = cat.boxplot("g", "y", data=self.df,
                          order=["a", "b", "c", "d"])
         nt.assert_equal(len(ax.artists), 3)
+        plt.close("all")
+
+    def test_missing_data(self):
+
+        x = ["a", "a", "b", "b", "c", "c", "d", "d"]
+        h = ["x", "y", "x", "y", "x", "y", "x", "y"]
+        y = self.rs.randn(8)
+        y[-2:] = np.nan
+
+        ax = cat.boxplot(x, y)
+        nt.assert_equal(len(ax.artists), 3)
+
+        plt.close("all")
+
+        y[-1] = 0
+        ax = cat.boxplot(x, y, h)
+        nt.assert_equal(len(ax.artists), 7)
+
         plt.close("all")
 
     def test_boxplots(self):
@@ -1218,6 +1236,13 @@ class TestViolinPlotter(CategoricalFixture):
             x, _ = line.get_xydata().T
             npt.assert_array_equal(x, [val, val])
         plt.close("all")
+
+    def test_validate_inner(self):
+
+        kws = self.default_kws.copy()
+        kws.update(dict(inner="bad_inner"))
+        with nt.assert_raises(ValueError):
+            cat._ViolinPlotter(**kws)
 
     def test_draw_violinplots(self):
 
@@ -2108,6 +2133,11 @@ class TestFactorPlot(CategoricalFixture):
 
         with nt.assert_raises(ValueError):
             cat.factorplot("g", "y", data=self.df, kind="not_a_kind")
+
+    def test_count_x_and_y(self):
+
+        with nt.assert_raises(ValueError):
+            cat.factorplot("g", "y", data=self.df, kind="count")
 
     def test_plot_colors(self):
 

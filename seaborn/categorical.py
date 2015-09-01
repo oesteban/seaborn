@@ -16,7 +16,7 @@ from . import utils
 from .utils import desaturate, iqr, categorical_order
 from .algorithms import bootstrap
 from .palettes import color_palette, husl_palette, light_palette
-from .axisgrid import FacetGrid
+from .axisgrid import FacetGrid, _facet_docs
 
 
 class _CategoricalPlotter(object):
@@ -141,7 +141,7 @@ class _CategoricalPlotter(object):
             # Validate the inputs
             for input in [x, y, hue, units]:
                 if isinstance(input, string_types):
-                    err = "Could not interperet input '{}'".format(input)
+                    err = "Could not interpret input '{}'".format(input)
                     raise ValueError(err)
 
             # Figure out the plotting orientation
@@ -435,13 +435,18 @@ class _BoxPlotter(_CategoricalPlotter):
 
             if self.plot_hues is None:
 
-                # Handle case where there is no data to plot
-                if not group_data.size:
+                # Handle case where there is data at this level
+                if group_data.size == 0:
                     continue
 
                 # Draw a single box or a set of boxes
                 # with a single level of grouping
                 box_data = remove_na(group_data)
+
+                # Handle case where there is no non-null data
+                if box_data.size == 0:
+                    continue
+
                 artist_dict = ax.boxplot(box_data,
                                          vert=vert,
                                          patch_artist=True,
@@ -460,11 +465,16 @@ class _BoxPlotter(_CategoricalPlotter):
                     if not i:
                         self.add_legend_data(ax, self.colors[j], hue_level)
 
-                    # Handle case where there is no data to plot
-                    if not group_data.size or not hue_mask.any():
+                    # Handle case where there is data at this level
+                    if group_data.size == 0:
                         continue
 
                     box_data = remove_na(group_data[hue_mask])
+
+                    # Handle case where there is no non-null data
+                    if box_data.size == 0:
+                        continue
+
                     center = i + offsets[j]
                     artist_dict = ax.boxplot(box_data,
                                              vert=vert,
@@ -524,7 +534,16 @@ class _ViolinPlotter(_CategoricalPlotter):
 
         self.gridsize = gridsize
         self.width = width
+
+        if inner is not None:
+            if not any([inner.startswith("quart"),
+                        inner.startswith("box"),
+                        inner.startswith("stick"),
+                        inner.startswith("point")]):
+                err = "Inner style '{}' not recognized".format(inner)
+                raise ValueError(err)
         self.inner = inner
+
         if split and self.hue_names is not None and len(self.hue_names) != 2:
             raise ValueError("Cannot use `split` with more than 2 hue levels.")
         self.split = split
@@ -1447,7 +1466,7 @@ _categorical_docs = dict(
     x, y, hue : names of variables in ``data``
         Inputs for plotting long-form data. See examples for interpretation.\
         """),
-    data=dedent("""\
+    categorical_data=dedent("""\
     data : DataFrame, array, or list of arrays, optional
         Dataset for plotting. If ``x`` and ``y`` are absent, this is
         interpreted as wide-form. Otherwise it is expected to be long-form.\
@@ -1545,6 +1564,8 @@ _categorical_docs = dict(
     """),
     )
 
+_categorical_docs.update(_facet_docs)
+
 
 def boxplot(x=None, y=None, hue=None, data=None, order=None, hue_order=None,
             orient=None, color=None, palette=None, saturation=.75,
@@ -1617,7 +1638,7 @@ boxplot.__doc__ = dedent("""\
     Parameters
     ----------
     {input_params}
-    {data}
+    {categorical_data}
     {order_vars}
     {orient}
     {color}
@@ -1800,7 +1821,7 @@ violinplot.__doc__ = dedent("""\
     Parameters
     ----------
     {input_params}
-    {data}
+    {categorical_data}
     {order_vars}
     bw : {{'scott', 'silverman', float}}, optional
         Either the name of a reference rule or the scale factor to use when
@@ -2002,7 +2023,7 @@ stripplot.__doc__ = dedent("""\
     Parameters
     ----------
     {input_params}
-    {data}
+    {categorical_data}
     {order_vars}
     jitter : float, ``True``/``1`` is special-cased, optional
         Amount of jitter (only along the categorical axis) to apply. This
@@ -2198,7 +2219,7 @@ barplot.__doc__ = dedent("""\
     Parameters
     ----------
     {input_params}
-    {data}
+    {categorical_data}
     {order_vars}
     {stat_api_params}
     {orient}
@@ -2365,7 +2386,7 @@ pointplot.__doc__ = dedent("""\
     Parameters
     ----------
     {input_params}
-    {data}
+    {categorical_data}
     {order_vars}
     {stat_api_params}
     markers : string or list of strings, optional
@@ -2543,7 +2564,7 @@ countplot.__doc__ = dedent("""\
     Parameters
     ----------
     {input_params}
-    {data}
+    {categorical_data}
     {order_vars}
     {orient}
     {color}
@@ -2645,6 +2666,8 @@ def factorplot(x=None, y=None, hue=None, data=None, row=None, col=None,
             x_, y_, orient = y, y, "h"
         elif y is None and x is not None:
             x_, y_, orient = x, x, "v"
+        else:
+            raise ValueError("Either `x` or `y` must be None for count plots")
     else:
         x_, y_ = x, y
 
@@ -2700,6 +2723,7 @@ def factorplot(x=None, y=None, hue=None, data=None, row=None, col=None,
             g.set_axis_labels(y_var="count")
 
     if legend and (hue is not None) and (hue not in [x, row, col]):
+        hue_order = list(map(str, hue_order))
         g.add_legend(title=hue, label_order=hue_order)
 
     return g
@@ -2741,10 +2765,7 @@ factorplot.__doc__ = dedent("""\
     {long_form_data}
     row, col : names of variables in ``data``, optional
         Categorical variables that will determine the faceting of the grid.
-    col_wrap : int, optional
-        "Wrap" the column facets at this number so that they occupy multiple
-        rows. Can be useful when using a variable with a large number of
-        levels. Cannot be used with a ``row`` variable.
+    {col_wrap}
     {stat_api_params}
     {order_vars}
     row_order, col_order : lists of strings, optional
@@ -2752,25 +2773,16 @@ factorplot.__doc__ = dedent("""\
         orders are inferred from the data objects.
     kind : {{``point``, ``bar``, ``count``, ``box``, ``violin``, ``strip``}}
         The kind of plot to draw.
-    size : float, optional
-        The size (height) of each facet, in inches.
-    aspect : float, optional
-        The aspect ratio of the plot, ``size * aspect`` gives the width of each
-        facet, in inches.
+    {size}
+    {aspect}
     {orient}
     {color}
     {palette}
     legend : bool, optional
         If ``True`` and there is a ``hue`` variable, draw a legend on the plot.
-    legend_out : bool, optional
-        If ``True``, draw the plot outside of the plot axes.
-    sharex, sharey : bool, optional
-        If ``True``, the axeas are shared across the rows and columns of the
-        grid.
-    margin_titles : bool, optional
-        If ``True``, the titles for the row variable are drawn to the right of
-        the last column. This option is experimental and may not work in all
-        cases.
+    {legend_out}
+    {share_xy}
+    {margin_titles}
     facet_kws : dict, optional
         Dictionary of other keyword arguments to pass to :class:`FacetGrid`.
     kwargs : key, value pairings
@@ -2779,7 +2791,7 @@ factorplot.__doc__ = dedent("""\
 
     Returns
     -------
-    g : FacetGrid
+    g : :class:`FacetGrid`
         Returns the :class:`FacetGrid` object with the plot on it for further
         tweaking.
 
