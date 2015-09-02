@@ -98,14 +98,18 @@ class ConditionalJointGrid(object):
         f = plt.figure(figsize=(size * (1 + ncols * 0.5), size))
 
         gs0 = mgs.GridSpec(1, 2, width_ratios=[1, ncols / 2.0])
+
         gs1 = mgs.GridSpecFromSubplotSpec(2, 2, subplot_spec=gs0[0],
                                           width_ratios=[ratio, 1],
-                                          height_ratios=[1, ratio])
-
+                                          height_ratios=[1, ratio],
+                                          wspace=0.05,
+                                          hspace=0.05)
         gs2 = mgs.GridSpecFromSubplotSpec(nrows * 2, ncols * 2,
                                           subplot_spec=gs0[1],
                                           width_ratios=[ratio, 1] * ncols,
-                                          height_ratios=[1, ratio] * nrows)
+                                          height_ratios=[1, ratio] * nrows,
+                                          wspace=0.025,
+                                          hspace=0.025)
 
         ax_joint = [f.add_subplot(gs1[1, 0])]
         ax_marg_x = [f.add_subplot(gs1[0, 0], sharex=ax_joint[-1])]
@@ -285,7 +289,8 @@ class ConditionalJointGrid(object):
 
                 kwargs['c'] = self.palette[k]
                 kwargs['edgecolor'] = 'white'
-                kwargs['linewidths'] = .25
+                kwargs['linewidths'] = .5
+                kwargs['s'] = 30
                 self.ax_joint[k + 1].scatter(x, y, **kwargs)
 
                 if self.inline_labels:
