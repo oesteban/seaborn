@@ -7,6 +7,7 @@ import numpy as np
 import pandas as pd
 import matplotlib as mpl
 import matplotlib.pyplot as plt
+import matplotlib.gridspec as mgs
 
 from six import string_types
 
@@ -52,6 +53,7 @@ class ConditionalJointGrid(object):
         self.splitgrid = splitgrid
         self.inline_labels = inline_labels
         self.ratio = ratio
+        gwidth = ratio + 1
 
         # Possibly drop NA
         if dropna:
@@ -82,29 +84,47 @@ class ConditionalJointGrid(object):
             self.hue_vals = data[hue]
 
         self.n_splits = 1
+
+        nrows = 0
+        ncols = 0
+
         if splitgrid and hue is not None:
             self.n_splits = len(hue_names) + 1
 
+            nrows = 2
+            ncols = int(np.ceil(len(hue_names) / float(nrows)))
+
         # Set up the subplot grid
-        gwidth = ratio + 1
-        f = plt.figure(figsize=(size * self.n_splits, size))
-        gs1 = plt.GridSpec(gwidth, gwidth)
+        f = plt.figure(figsize=(size * (1 + ncols * 0.5), size))
 
-        ax_joint = []
-        ax_marg_x = []
-        ax_marg_y = []
+        gs0 = mgs.GridSpec(1, 2, width_ratios=[1, ncols / 2.0])
+        gs1 = mgs.GridSpecFromSubplotSpec(2, 2, subplot_spec=gs0[0],
+                                          width_ratios=[ratio, 1],
+                                          height_ratios=[1, ratio])
 
-        for i in range(self.n_splits):
-            stidx = gwidth * i
-            ax_joint.append(f.add_subplot(gs[1:, stidx:(stidx + ratio)]))
+        gs2 = mgs.GridSpecFromSubplotSpec(nrows * 2, ncols * 2,
+                                          subplot_spec=gs0[1],
+                                          width_ratios=[ratio, 1] * ncols,
+                                          height_ratios=[1, ratio] * nrows)
 
-            ax_marg_x.append(f.add_subplot(gs[0, stidx:(stidx + ratio)],
-                                           sharex=ax_joint[-1]))
-            ax_marg_y.append(f.add_subplot(gs[1:, (stidx + ratio)],
-                                           sharey=ax_joint[-1]))
+        ax_joint = [f.add_subplot(gs1[1, 0])]
+        ax_marg_x = [f.add_subplot(gs1[0, 0], sharex=ax_joint[-1])]
+        ax_marg_y = [f.add_subplot(gs1[1, 1], sharey=ax_joint[-1])]
+
+        hueid = 0
+        for row in range(nrows):
+            for col in range(ncols):
+                ax_joint.append(f.add_subplot(gs2[(row * 2 + 1), col * 2]))
+                ax_marg_x.append(f.add_subplot(
+                    gs2[row * 2, col * 2], sharex=ax_joint[-1]))
+                ax_marg_y.append(f.add_subplot(
+                    gs2[(row * 2 + 1), (col * 2 + 1)], sharey=ax_joint[-1]))
+                hueid += 1
+
+                if hueid >= len(hue_names):
+                    break
 
         self.fig = f
-        self.grid_spec = gs
         self.ax_joint = ax_joint
         self.ax_marg_x = ax_marg_x
         self.ax_marg_y = ax_marg_y
@@ -235,8 +255,11 @@ class ConditionalJointGrid(object):
                 if p == 0:
                     func(x, y, **kwargs)
                 elif p != k + 1:
-                    kwargs['c'] = thiscolor
-                    self.ax_joint[p].scatter(x, y, **kwargs)
+                    subkwargs = kwargs.copy()
+                    subkwargs['c'] = thiscolor
+                    subkwargs['edgecolor'] = 'white'
+                    subkwargs['linewidths'] = .25
+                    self.ax_joint[p].scatter(x, y, **subkwargs)
 
                 kwargs.pop('c', None)
                 kwargs.pop('cmap', None)
@@ -261,13 +284,16 @@ class ConditionalJointGrid(object):
                 y = self.y[np.where(self.hue_vals == hue)]
 
                 kwargs['c'] = self.palette[k]
+                kwargs['edgecolor'] = 'white'
+                kwargs['linewidths'] = .25
                 self.ax_joint[k + 1].scatter(x, y, **kwargs)
 
                 if self.inline_labels:
-                    mu = (np.median(x), np.median(y))
+                    mu = (0.75 * self.ax_joint[k + 1].get_xlim()[0],
+                          1.1 * self.ax_joint[k + 1].get_ylim()[0])
                     self.ax_joint[k + 1].annotate(
                         hue, xy=(mu[0], mu[1]), xytext=(30, 20),
-                        textcoords='offset points', size=30, va='center',
+                        textcoords='offset points', size=20, va='center',
                         color='w',
                         bbox=dict(boxstyle="round", fc=self.palette[k],
                                   ec='none', alpha=0.7, color='w')
