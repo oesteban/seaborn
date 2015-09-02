@@ -20,7 +20,7 @@ class ConditionalJointGrid(object):
 
     def __init__(self, x, y, data=None, hue=None, hue_order=None, size=6,
                  ratio=5, space=.2, dropna=True, xlim=None, ylim=None,
-                 inline_labels=False):
+                 inline_labels=False, splitgrid=True):
         """Set up the grid of subplots.
 
         Parameters
@@ -48,33 +48,10 @@ class ConditionalJointGrid(object):
                     default plot kinds.
 
         """
-        # Set up the subplot grid
-        f = plt.figure(figsize=(size, size))
-        gs = plt.GridSpec(ratio + 1, ratio + 1)
 
-        ax_joint = f.add_subplot(gs[1:, :-1])
-        ax_marg_x = f.add_subplot(gs[0, :-1], sharex=ax_joint)
-        ax_marg_y = f.add_subplot(gs[1:, -1], sharey=ax_joint)
-
-        self.fig = f
-        self.ax_joint = ax_joint
-        self.ax_marg_x = ax_marg_x
-        self.ax_marg_y = ax_marg_y
+        self.splitgrid = splitgrid
         self.inline_labels = inline_labels
-
-        # Turn off tick visibility for the measure axis on the marginal plots
-        plt.setp(ax_marg_x.get_xticklabels(), visible=False)
-        plt.setp(ax_marg_y.get_yticklabels(), visible=False)
-
-        # Turn off the ticks on the density axis for the marginal plots
-        plt.setp(ax_marg_x.yaxis.get_majorticklines(), visible=False)
-        plt.setp(ax_marg_x.yaxis.get_minorticklines(), visible=False)
-        plt.setp(ax_marg_y.xaxis.get_majorticklines(), visible=False)
-        plt.setp(ax_marg_y.xaxis.get_minorticklines(), visible=False)
-        plt.setp(ax_marg_x.get_yticklabels(), visible=False)
-        plt.setp(ax_marg_y.get_xticklabels(), visible=False)
-        ax_marg_x.yaxis.grid(False)
-        ax_marg_y.xaxis.grid(False)
+        self.ratio = ratio
 
         # Possibly drop NA
         if dropna:
@@ -87,23 +64,6 @@ class ConditionalJointGrid(object):
                 x = data[x]
             if y in data:
                 y = data[y]
-
-        # Find the names of the variables
-        if hasattr(x, "name"):
-            xlabel = x.name
-            ax_joint.set_xlabel(xlabel)
-        if hasattr(y, "name"):
-            ylabel = y.name
-            ax_joint.set_ylabel(ylabel)
-
-        # Convert the x and y data to arrays for plotting
-        self.x = np.asarray(x)
-        self.y = np.asarray(y)
-
-        if xlim is not None:
-            ax_joint.set_xlim(xlim)
-        if ylim is not None:
-            ax_joint.set_ylim(ylim)
 
         # Sort out the hue variable
         self._hue_var = hue
@@ -121,14 +81,79 @@ class ConditionalJointGrid(object):
             self.hue_names = hue_names
             self.hue_vals = data[hue]
 
+        self.n_splits = 1
+        if splitgrid and hue is not None:
+            self.n_splits = len(hue_names) + 1
+
+        # Set up the subplot grid
+        gwidth = ratio + 1
+        f = plt.figure(figsize=(size * self.n_splits, size))
+        gs1 = plt.GridSpec(gwidth, gwidth)
+
+        ax_joint = []
+        ax_marg_x = []
+        ax_marg_y = []
+
+        for i in range(self.n_splits):
+            stidx = gwidth * i
+            ax_joint.append(f.add_subplot(gs[1:, stidx:(stidx + ratio)]))
+
+            ax_marg_x.append(f.add_subplot(gs[0, stidx:(stidx + ratio)],
+                                           sharex=ax_joint[-1]))
+            ax_marg_y.append(f.add_subplot(gs[1:, (stidx + ratio)],
+                                           sharey=ax_joint[-1]))
+
+        self.fig = f
+        self.grid_spec = gs
+        self.ax_joint = ax_joint
+        self.ax_marg_x = ax_marg_x
+        self.ax_marg_y = ax_marg_y
+
+        # Find the names of the variables
+        if hasattr(x, "name"):
+            xlabel = x.name
+            ax_joint[0].set_xlabel(xlabel)
+        if hasattr(y, "name"):
+            ylabel = y.name
+            ax_joint[0].set_ylabel(ylabel)
+
+        # Convert the x and y data to arrays for plotting
+        self.x = np.asarray(x)
+        self.y = np.asarray(y)
+
+        if xlim is not None:
+            for axj in ax_joint:
+                axj.set_xlim(xlim)
+
+        if ylim is not None:
+            for axj in ax_joint:
+                axj.set_ylim(ylim)
+
         # Additional dict of kwarg -> list of values for mapping the hue var
         # self.hue_kws = hue_kws if hue_kws is not None else {}
         self.palette = color_palette("husl", n_colors=len(self.hue_names))
 
         # Make the grid look nice
         utils.despine(f)
-        utils.despine(ax=ax_marg_x, left=True)
-        utils.despine(ax=ax_marg_y, bottom=True)
+
+        for ax_mx, ax_my in zip(ax_marg_x, ax_marg_y):
+            # Turn off tick visibility for the measure axis
+            # on the marginal plots
+            plt.setp(ax_mx.get_xticklabels(), visible=False)
+            plt.setp(ax_my.get_yticklabels(), visible=False)
+
+            # Turn off the ticks on the density axis for the marginal plots
+            plt.setp(ax_mx.yaxis.get_majorticklines(), visible=False)
+            plt.setp(ax_mx.yaxis.get_minorticklines(), visible=False)
+            plt.setp(ax_my.xaxis.get_majorticklines(), visible=False)
+            plt.setp(ax_my.xaxis.get_minorticklines(), visible=False)
+            plt.setp(ax_mx.get_yticklabels(), visible=False)
+            plt.setp(ax_my.get_xticklabels(), visible=False)
+            ax_mx.yaxis.grid(False)
+            ax_my.xaxis.grid(False)
+            utils.despine(ax=ax_mx, left=True)
+            utils.despine(ax=ax_my, bottom=True)
+
         f.tight_layout()
         f.subplots_adjust(hspace=space, wspace=space)
 
@@ -144,7 +169,7 @@ class ConditionalJointGrid(object):
 
         Returns
         -------
-        self : JointGrid instance
+        self : ConditionalJointGrid instance
             Returns `self`.
 
         """
@@ -167,23 +192,21 @@ class ConditionalJointGrid(object):
 
         Returns
         -------
-        self : JointGrid instance
+        self : ConditionalJointGrid instance
             Returns `self`.
 
         """
         from .distributions import kdeplot
         from matplotlib import patches as mpatches
 
-        plt.sca(self.ax_joint)
-
-        isscatter = (func == plt.scatter)
         colorkw = 'cmap'
 
         patches = []
+        thecolors = []
 
         if func == plt.scatter:
             kwargs['edgecolor'] = 'white'
-            func = getattr(self.ax_joint, 'scatter')
+            func = getattr(self.ax_joint[0], 'scatter')
             colorkw = 'c'
 
         for k, hue in enumerate(self.hue_names):
@@ -195,29 +218,66 @@ class ConditionalJointGrid(object):
                 x = self.x
                 y = self.y
 
-            thiscolor = self.palette[k]
+            for p in range(self.n_splits):
+                plt.sca(self.ax_joint[p])
 
-            if colorkw == 'c':
-                kwargs['c'] = thiscolor
-            elif colorkw == 'cmap':
-                kwargs['cmap'] = light_palette(
-                    thiscolor, as_cmap=True)
-            func(x, y, **kwargs)
+                if p == 0 or p == k + 1:
+                    thiscolor = self.palette[k]
+                else:
+                    thiscolor = 'darkgray'
 
-            if hue is not None and self.inline_labels:
-                mu = (np.median(x), np.median(y))
-                self.ax_joint.annotate(
-                    hue, xy=(mu[0], mu[1]), xytext=(30, 20),
-                    textcoords='offset points', size=30, va='center',
-                    color='w',
-                    bbox=dict(boxstyle="round", fc=thiscolor, ec='none',
-                              alpha=0.7, color='w')
-                )
-            elif hue is not None and not self.inline_labels:
-                patches.append(mpatches.Patch(color=thiscolor, label=hue))
+                if colorkw == 'c':
+                    kwargs['c'] = thiscolor
+                elif colorkw == 'cmap':
+                    kwargs['cmap'] = light_palette(
+                        thiscolor, as_cmap=True)
+
+                if p == 0:
+                    func(x, y, **kwargs)
+                elif p != k + 1:
+                    kwargs['c'] = thiscolor
+                    self.ax_joint[p].scatter(x, y, **kwargs)
+
+                kwargs.pop('c', None)
+                kwargs.pop('cmap', None)
+
+                if p == 0:
+                    if hue is not None and self.inline_labels:
+                        mu = (np.median(x), np.median(y))
+                        self.ax_joint[p].annotate(
+                            hue, xy=(mu[0], mu[1]), xytext=(30, 20),
+                            textcoords='offset points', size=30, va='center',
+                            color='w',
+                            bbox=dict(boxstyle="round", fc=self.palette[k],
+                                      ec='none', alpha=0.7, color='w')
+                        )
+                    elif hue is not None and not self.inline_labels:
+                        patches.append(mpatches.Patch(color=self.palette[k],
+                                                      label=hue))
+        if self.n_splits > 1:
+            for k, hue in enumerate(self.hue_names):
+                kwargs['label'] = hue
+                x = self.x[np.where(self.hue_vals == hue)]
+                y = self.y[np.where(self.hue_vals == hue)]
+
+                kwargs['c'] = self.palette[k]
+                self.ax_joint[k + 1].scatter(x, y, **kwargs)
+
+                if self.inline_labels:
+                    mu = (np.median(x), np.median(y))
+                    self.ax_joint[k + 1].annotate(
+                        hue, xy=(mu[0], mu[1]), xytext=(30, 20),
+                        textcoords='offset points', size=30, va='center',
+                        color='w',
+                        bbox=dict(boxstyle="round", fc=self.palette[k],
+                                  ec='none', alpha=0.7, color='w')
+                    )
+                elif hue is not None and not self.inline_labels:
+                    patches.append(mpatches.Patch(color=self.palette[k],
+                                                  label=hue))
 
         if len(patches) > 0:
-            self.ax_joint.legend(handles=patches)
+            self.ax_joint[0].legend(handles=patches)
 
         return self
 
@@ -236,12 +296,11 @@ class ConditionalJointGrid(object):
 
         Returns
         -------
-        self : JointGrid instance
+        self : ConditionalJointGrid instance
             Returns `self`.
 
         """
         kwargs["vertical"] = False
-        plt.sca(self.ax_marg_x)
 
         for k, hue in enumerate(self.hue_names):
             if hue is not None:
@@ -249,10 +308,22 @@ class ConditionalJointGrid(object):
                 x = self.x[np.where(self.hue_vals == hue)]
             else:
                 x = self.x
-            func(x, color=self.palette[k], **kwargs)
+
+            for p in range(self.n_splits):
+                if p == 0 or p == k + 1:
+                    c = self.palette[k]
+                else:
+                    c = 'darkgray'
+                plt.sca(self.ax_marg_x[p])
+                func(x, color=c, **kwargs)
+
+                try:
+                    self.ax_marg_x[p].legend_.remove()
+                except AttributeError:
+                    pass
 
         kwargs["vertical"] = True
-        plt.sca(self.ax_marg_y)
+        plt.sca(self.ax_marg_y[0])
 
         for k, hue in enumerate(self.hue_names):
             if hue is not None:
@@ -260,17 +331,19 @@ class ConditionalJointGrid(object):
                 y = self.y[np.where(self.hue_vals == hue)]
             else:
                 y = self.y
-            func(y, color=self.palette[k], **kwargs)
 
-        try:
-            self.ax_marg_x.legend_.remove()
-        except AttributeError:
-            pass
+            for p in range(self.n_splits):
+                if p == 0 or p == k + 1:
+                    c = self.palette[k]
+                else:
+                    c = 'darkgray'
+                plt.sca(self.ax_marg_y[p])
+                func(y, color=c, **kwargs)
 
-        try:
-            self.ax_marg_y.legend_.remove()
-        except AttributeError:
-            pass
+                try:
+                    self.ax_marg_y[p].legend_.remove()
+                except AttributeError:
+                    pass
 
         return self
 
@@ -296,7 +369,7 @@ class ConditionalJointGrid(object):
 
         Returns
         -------
-        self : JointGrid instance.
+        self : ConditionalJointGrid instance.
             Returns `self`.
 
         """
@@ -327,8 +400,8 @@ class ConditionalJointGrid(object):
         # Draw an invisible plot and use the legend to draw the annotation
         # This is a bit of a hack, but `loc=best` works nicely and is not
         # easily abstracted.
-        phantom, = self.ax_joint.plot(self.x, self.y, linestyle="", alpha=0)
-        self.ax_joint.legend([phantom], [annotation], loc=loc, **kwargs)
+        phantom, = self.ax_joint[0].plot(self.x, self.y, linestyle="", alpha=0)
+        self.ax_joint[0].legend([phantom], [annotation], loc=loc, **kwargs)
         phantom.remove()
 
         return self
@@ -346,12 +419,14 @@ class ConditionalJointGrid(object):
 
         Returns
         -------
-        self : JointGrid instance
+        self : ConditionalJointGrid instance
             returns `self`
 
         """
-        self.ax_joint.set_xlabel(xlabel, **kwargs)
-        self.ax_joint.set_ylabel(ylabel, **kwargs)
+        self.ax_joint[0].set_xlabel(xlabel, **kwargs)
+
+        for ax in self.ax_joint:
+            ax.set_ylabel(ylabel, **kwargs)
         return self
 
     def savefig(self, *args, **kwargs):
