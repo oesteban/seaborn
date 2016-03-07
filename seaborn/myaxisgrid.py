@@ -53,6 +53,7 @@ class ConditionalJointGrid(object):
         self.splitgrid = splitgrid
         self.inline_labels = inline_labels
         self.ratio = ratio
+        self.size = size
         gwidth = ratio + 1
 
         # Possibly drop NA
@@ -270,10 +271,14 @@ class ConditionalJointGrid(object):
 
                 if p == 0:
                     if hue is not None and self.inline_labels:
+                        xytext = (30, 40)
+                        if hue == r'$\Omega_{cbGM}$' or hue == r'$\Omega_{bst}$':
+                            xytext = (-50, -40)
+
                         mu = (np.median(x), np.median(y))
                         self.ax_joint[p].annotate(
-                            hue, xy=(mu[0], mu[1]), xytext=(30, 20),
-                            textcoords='offset points', size=30, va='center',
+                            hue, xy=(mu[0], mu[1]), xytext=xytext,
+                            textcoords='offset points', size=3*self.size, va='center',
                             color='w',
                             bbox=dict(boxstyle="round", fc=self.palette[k],
                                       ec='none', alpha=0.7, color='w')
@@ -521,6 +526,7 @@ class CompareJointGrid(object):
 
         # Sort out the hue variable
         self._hue_var = hue
+        self.hue_label = None
         if hue is None:
             self.hue_names = [None]
             self.hue_vals = pd.Series(["_nolegend_"] * len(data),
@@ -534,6 +540,9 @@ class CompareJointGrid(object):
 
             self.hue_names = hue_names
             self.hue_vals = data[hue]
+
+            if tlabel is not None:
+                self.hue_label = hue_names[tlabel]
 
         self.n_splits = 1
 
@@ -609,10 +618,10 @@ class CompareJointGrid(object):
                 self.refy = np.asarray(refdata[ylabel])
 
             if hue is None:
-                self.ref_hue_vals = pd.Series(["_nolegend_"] * len(data),
+                self.ref_hue_vals = pd.Series(["_nolegend_"] * len(refdata),
                                               index=refdata.index)
             else:
-                self.ref_hue_vals = data[hue]
+                self.ref_hue_vals = refdata[hue]
 
         if xlim is not None:
             for axj in ax_joint:
@@ -646,6 +655,10 @@ class CompareJointGrid(object):
             ax_my.xaxis.grid(False)
             utils.despine(ax=ax_mx, left=True)
             utils.despine(ax=ax_my, bottom=True)
+
+        if self.hue_label is not None:
+            ax_joint[0].set_ylabel('')
+            ax_joint[0].set_xlabel('')
 
         f.tight_layout()
         f.subplots_adjust(hspace=space, wspace=space)
@@ -702,7 +715,7 @@ class CompareJointGrid(object):
             func = getattr(self.ax_joint[0], 'scatter')
             colorkw = 'c'
 
-        if self.tlabel is None:
+        if self.hue_label is None:
             for k, hue in enumerate(self.hue_names):
                 if hue is not None:
                     kwargs['label'] = hue
@@ -784,18 +797,26 @@ class CompareJointGrid(object):
             # Plot each tissue
             for k, hue in enumerate(self.hue_names):
                 thisargs = copy(kwargs)
-                if k != self.tlabel:
+                if hue != self.hue_label:
                     self._plot_tissue_conditional(self.x, self.y, func, hue, colorkw, **thisargs)
-
-            thisargs = copy(kwargs)
-            self._plot_tissue_conditional(self.x, self.y, func, self.hue_names[self.tlabel],
-                                          colorkw, .7, True, self.palette[self.tlabel], **thisargs)
 
             if self.refx is not None and self.refy is not None:
                 thisargs = copy(kwargs)
+                thisargs['linestyles'] = 'dashed'
                 self._plot_tissue_conditional(
-                    self.refx, self.refy, func, self.hue_names[self.tlabel], colorkw, 1., False,
-                    self.palette[self.tlabel], self.ref_hue_vals, **thisargs)
+                    self.refx, self.refy, func, self.hue_label, colorkw, .7, False,
+                    'black', self.ref_hue_vals, **thisargs)
+
+            thisargs = copy(kwargs)
+            self._plot_tissue_conditional(self.x, self.y, func, self.hue_label,
+                                          colorkw, .5, True, self.palette[self.tlabel], **thisargs)
+
+            self.ax_joint[0].annotate(
+                self.hue_label, xy=(.9, .9), xytext=(0, 0), xycoords='axes fraction',
+                textcoords='offset points', size=40, color='w', ha='right', va='top',
+                bbox=dict(boxstyle="round", fc=self.palette[self.tlabel],
+                          ec='none', alpha=0.7, color='w')
+            )
 
         if len(patches) > 0:
             self.ax_joint[0].legend(handles=patches)
