@@ -5,6 +5,7 @@ import warnings
 
 import numpy as np
 import pandas as pd
+import networkx as nx
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 import matplotlib.gridspec as mgs
@@ -21,7 +22,7 @@ class ConditionalJointGrid(object):
 
     def __init__(self, x, y, data=None, hue=None, hue_order=None, size=6,
                  ratio=5, space=.2, dropna=True, xlim=None, ylim=None,
-                 inline_labels=False, splitgrid=True):
+                 inline_labels=False, splitgrid=True, fontprops=None):
         """Set up the grid of subplots.
 
         Parameters
@@ -135,12 +136,8 @@ class ConditionalJointGrid(object):
         self.ax_marg_y = ax_marg_y
 
         # Find the names of the variables
-        if hasattr(x, "name"):
-            xlabel = x.name
-            ax_joint[0].set_xlabel(xlabel)
-        if hasattr(y, "name"):
-            ylabel = y.name
-            ax_joint[0].set_ylabel(ylabel)
+        if fontprops is None:
+            fontprops = {}
 
         # Convert the x and y data to arrays for plotting
         self.x = np.asarray(x)
@@ -156,7 +153,9 @@ class ConditionalJointGrid(object):
 
         # Additional dict of kwarg -> list of values for mapping the hue var
         # self.hue_kws = hue_kws if hue_kws is not None else {}
-        self.palette = color_palette("husl", n_colors=len(self.hue_names))
+        # self.palette = color_palette("husl", n_colors=len(self.hue_names))
+        self.palette = list(color_palette("Set1", n_colors=len(self.hue_names) + 1))
+        del self.palette[-2]
 
         # Make the grid look nice
         utils.despine(f)
@@ -227,12 +226,17 @@ class ConditionalJointGrid(object):
         colorkw = 'cmap'
 
         patches = []
-        thecolors = []
 
         if func == plt.scatter:
             kwargs['edgecolor'] = 'white'
             func = getattr(self.ax_joint[0], 'scatter')
             colorkw = 'c'
+
+        label_graph = None
+        if all([hue is not None for hue in self.hue_names]) and self.inline_labels:
+            label_graph = nx.Graph()
+            data_nodes = []
+            init_pos = {}
 
         for k, hue in enumerate(self.hue_names):
             if hue is not None:
@@ -270,22 +274,36 @@ class ConditionalJointGrid(object):
                 kwargs.pop('cmap', None)
 
                 if p == 0:
-                    if hue is not None and self.inline_labels:
-                        xytext = (30, 40)
-                        if hue == r'$\Omega_{cbGM}$' or hue == r'$\Omega_{bst}$':
-                            xytext = (-50, -40)
+                    if label_graph is not None:
+                        location = (np.median(x), np.median(y))
 
-                        mu = (np.median(x), np.median(y))
-                        self.ax_joint[p].annotate(
-                            hue, xy=(mu[0], mu[1]), xytext=xytext,
-                            textcoords='offset points', size=3*self.size, va='center',
-                            color='w',
-                            bbox=dict(boxstyle="round", fc=self.palette[k],
-                                      ec='none', alpha=0.7, color='w')
-                        )
+                        data_str = 'data_{0}'.format(hue)
+                        ano_str = 'anot_{0}'.format(hue)
+                        label_graph.add_node(data_str)
+                        label_graph.add_node(ano_str)
+                        label_graph.add_edge(data_str, ano_str)
+                        data_nodes.append(data_str)
+                        init_pos[data_str] = location
+                        init_pos[ano_str] = location
+
                     elif hue is not None and not self.inline_labels:
                         patches.append(mpatches.Patch(color=self.palette[k],
                                                       label=hue))
+
+
+        if label_graph is not None:
+            pos = nx.spring_layout(label_graph, pos=init_pos, fixed=data_nodes, iterations=2)
+
+            for k, hue in enumerate(self.hue_names):
+                self.ax_joint[0].annotate(
+                    hue, xy=pos['data_{0}'.format(hue)], xycoords='data',
+                    xytext=pos['anot_{0}'.format(hue)], textcoords='data',
+                    size=3*self.size, va='center', color='w',
+                    bbox=dict(boxstyle="round", fc=self.palette[k],
+                              ec='none', alpha=0.7, color='w')
+                )
+
+
         if self.n_splits > 1:
             for k, hue in enumerate(self.hue_names):
                 kwargs['label'] = hue
@@ -633,7 +651,9 @@ class CompareJointGrid(object):
 
         # Additional dict of kwarg -> list of values for mapping the hue var
         # self.hue_kws = hue_kws if hue_kws is not None else {}
-        self.palette = color_palette("husl", n_colors=len(self.hue_names))
+        self.palette = list(color_palette("Set1", n_colors=len(self.hue_names) + 1))
+        del self.palette[-2]
+        # self.palette = color_palette("husl", n_colors=len(self.hue_names))
 
         # Make the grid look nice
         utils.despine(f)
